@@ -16,14 +16,99 @@ const bulkKeywordsInput = document.getElementById('bulkKeywords');
 const videoCountSelect = document.getElementById('videoCount');
 const bulkProgressDiv = document.getElementById('bulkProgress');
 
+// Navigation elements
+const navItems = document.querySelectorAll('.nav-item');
+const contentSections = document.querySelectorAll('.content-section');
+const mainTitle = document.getElementById('main-title');
+
+// Video management elements
+const refreshVideosBtn = document.getElementById('refreshVideosBtn');
+const videoSearchInput = document.getElementById('videoSearchInput');
+const videosListDiv = document.getElementById('videosList');
+const videoCountSpan = document.getElementById('videoCount');
+
+// Modal elements
+const editModal = document.getElementById('editModal');
+const deleteModal = document.getElementById('deleteModal');
+const editVideoForm = document.getElementById('editVideoForm');
+const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+// Global variables
+let allVideos = [];
+let filteredVideos = [];
+let currentEditingVideo = null;
+let currentDeletingVideo = null;
+
 // === EVENT LISTENERS ===
+// Existing event listeners
 searchBtn.addEventListener('click', searchYouTube);
 keywordInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') searchYouTube();
 });
 bulkUploadBtn.addEventListener('click', startBulkUpload);
 
-// === FUNCTIONS ===
+// Navigation event listeners
+navItems.forEach(item => {
+    item.addEventListener('click', () => {
+        const section = item.dataset.section;
+        switchSection(section);
+    });
+});
+
+// Video management event listeners
+refreshVideosBtn.addEventListener('click', loadAllVideos);
+videoSearchInput.addEventListener('input', filterVideos);
+
+// Modal event listeners
+document.querySelectorAll('.close').forEach(closeBtn => {
+    closeBtn.addEventListener('click', closeModals);
+});
+
+document.querySelectorAll('.btn-cancel').forEach(cancelBtn => {
+    cancelBtn.addEventListener('click', closeModals);
+});
+
+editVideoForm.addEventListener('submit', saveVideoChanges);
+confirmDeleteBtn.addEventListener('click', confirmDeleteVideo);
+
+// Close modals when clicking outside
+window.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) {
+        closeModals();
+    }
+});
+
+// === NAVIGATION FUNCTIONS ===
+function switchSection(section) {
+    // Update navigation
+    navItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.dataset.section === section) {
+            item.classList.add('active');
+        }
+    });
+
+    // Update content sections
+    contentSections.forEach(contentSection => {
+        contentSection.classList.remove('active');
+    });
+
+    // Show selected section
+    const targetSection = document.getElementById(`${section}-section`);
+    if (targetSection) {
+        targetSection.classList.add('active');
+    }
+
+    // Update main title
+    if (section === 'search') {
+        mainTitle.textContent = 'YouTube Video Admin';
+    } else if (section === 'manage') {
+        mainTitle.textContent = 'Video Management';
+        loadAllVideos(); // Load videos when switching to manage section
+    }
+}
+
+// === EXISTING FUNCTIONS (unchanged) ===
 function showNotification(message, type = 'info') {
     notificationDiv.textContent = message;
     notificationDiv.className = 'notification ' + (type === 'success' ? 'success' : type === 'error' ? 'error' : '');
@@ -117,7 +202,7 @@ function addToSupabase(video, card) {
     });
 }
 
-// === BULK UPLOAD FUNCTIONS ===
+// === BULK UPLOAD FUNCTIONS (unchanged) ===
 function addProgressItem(message, type = 'info') {
     const item = document.createElement('div');
     item.className = `progress-item progress-${type}`;
@@ -257,4 +342,242 @@ async function startBulkUpload() {
     } else {
         showNotification('Bulk upload completed, but no videos were added.', 'error');
     }
-} 
+}
+
+// === VIDEO MANAGEMENT FUNCTIONS ===
+async function loadAllVideos() {
+    videosListDiv.innerHTML = '<div class="loading">Loading videos...</div>';
+    
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=*&order=created_at.desc`, {
+            headers: {
+                'apikey': SUPABASE_API_KEY,
+                'Authorization': `Bearer ${SUPABASE_API_KEY}`,
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch videos');
+        }
+        
+        const videos = await response.json();
+        allVideos = videos;
+        filteredVideos = videos;
+        displayVideosList(videos);
+        updateVideoCount(videos.length);
+        
+    } catch (error) {
+        console.error('Error loading videos:', error);
+        videosListDiv.innerHTML = `
+            <div class="empty-state">
+                <h3>Error Loading Videos</h3>
+                <p>Failed to load videos from the database. Please try again.</p>
+            </div>
+        `;
+        showNotification('Error loading videos from database.', 'error');
+    }
+}
+
+function displayVideosList(videos) {
+    if (videos.length === 0) {
+        videosListDiv.innerHTML = `
+            <div class="empty-state">
+                <h3>No Videos Found</h3>
+                <p>No videos have been added to the database yet.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    videosListDiv.innerHTML = '';
+    
+    videos.forEach(video => {
+        const videoItem = document.createElement('div');
+        videoItem.className = 'video-item';
+        videoItem.innerHTML = `
+            <img src="${video.thumbnail_url || '/api/placeholder/120/68'}" 
+                 alt="Thumbnail" 
+                 class="video-thumbnail"
+                 onerror="this.src='/api/placeholder/120/68'">
+            <div class="video-details">
+                <h4 class="video-item-title">${escapeHtml(video.title)}</h4>
+                <a href="${video.youtube_url}" target="_blank" class="video-url">${video.youtube_url}</a>
+                <div class="video-meta">
+                    Added: ${formatDate(video.created_at)}
+                    ${video.id ? `• ID: ${video.id}` : ''}
+                </div>
+            </div>
+            <div class="video-actions">
+                <button class="btn-edit" onclick="openEditModal(${video.id})">Edit</button>
+                <button class="btn-delete" onclick="openDeleteModal(${video.id}, '${escapeHtml(video.title)}')">Delete</button>
+            </div>
+        `;
+        videosListDiv.appendChild(videoItem);
+    });
+}
+
+function filterVideos() {
+    const searchTerm = videoSearchInput.value.toLowerCase().trim();
+    
+    if (!searchTerm) {
+        filteredVideos = allVideos;
+    } else {
+        filteredVideos = allVideos.filter(video => 
+            video.title.toLowerCase().includes(searchTerm) ||
+            video.youtube_url.toLowerCase().includes(searchTerm)
+        );
+    }
+    
+    displayVideosList(filteredVideos);
+    updateVideoCount(filteredVideos.length);
+}
+
+function updateVideoCount(count) {
+    const totalCount = allVideos.length;
+    if (count === totalCount) {
+        videoCountSpan.textContent = `Total Videos: ${totalCount}`;
+    } else {
+        videoCountSpan.textContent = `Showing ${count} of ${totalCount} videos`;
+    }
+}
+
+// === MODAL FUNCTIONS ===
+function openEditModal(videoId) {
+    const video = allVideos.find(v => v.id === videoId);
+    if (!video) {
+        showNotification('Video not found.', 'error');
+        return;
+    }
+    
+    currentEditingVideo = video;
+    
+    // Populate form
+    document.getElementById('editVideoId').value = video.id;
+    document.getElementById('editTitle').value = video.title;
+    document.getElementById('editUrl').value = video.youtube_url;
+    document.getElementById('editThumbnail').value = video.thumbnail_url || '';
+    
+    // Show modal
+    editModal.classList.add('show');
+}
+
+function openDeleteModal(videoId, videoTitle) {
+    const video = allVideos.find(v => v.id === videoId);
+    if (!video) {
+        showNotification('Video not found.', 'error');
+        return;
+    }
+    
+    currentDeletingVideo = video;
+    document.getElementById('deleteVideoTitle').textContent = videoTitle;
+    
+    // Show modal
+    deleteModal.classList.add('show');
+}
+
+function closeModals() {
+    editModal.classList.remove('show');
+    deleteModal.classList.remove('show');
+    currentEditingVideo = null;
+    currentDeletingVideo = null;
+}
+
+async function saveVideoChanges(e) {
+    e.preventDefault();
+    
+    if (!currentEditingVideo) {
+        showNotification('No video selected for editing.', 'error');
+        return;
+    }
+    
+    const formData = {
+        title: document.getElementById('editTitle').value.trim(),
+        youtube_url: document.getElementById('editUrl').value.trim(),
+        thumbnail_url: document.getElementById('editThumbnail').value.trim()
+    };
+    
+    if (!formData.title || !formData.youtube_url) {
+        showNotification('Title and URL are required.', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('Updating video...', 'info');
+        
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${currentEditingVideo.id}`, {
+            method: 'PATCH',
+            headers: {
+                'apikey': SUPABASE_API_KEY,
+                'Authorization': `Bearer ${SUPABASE_API_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to update video');
+        }
+        
+        showNotification('Video updated successfully!', 'success');
+        closeModals();
+        loadAllVideos(); // Refresh the list
+        
+    } catch (error) {
+        console.error('Error updating video:', error);
+        showNotification('Error updating video. Please try again.', 'error');
+    }
+}
+
+async function confirmDeleteVideo() {
+    if (!currentDeletingVideo) {
+        showNotification('No video selected for deletion.', 'error');
+        return;
+    }
+    
+    try {
+        showNotification('Deleting video...', 'info');
+        
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${currentDeletingVideo.id}`, {
+            method: 'DELETE',
+            headers: {
+                'apikey': SUPABASE_API_KEY,
+                'Authorization': `Bearer ${SUPABASE_API_KEY}`,
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete video');
+        }
+        
+        showNotification('Video deleted successfully!', 'success');
+        closeModals();
+        loadAllVideos(); // Refresh the list
+        
+    } catch (error) {
+        console.error('Error deleting video:', error);
+        showNotification('Error deleting video. Please try again.', 'error');
+    }
+}
+
+// === UTILITY FUNCTIONS ===
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'Unknown';
+    
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (error) {
+        return 'Invalid Date';
+    }
+}
+
+// Make functions globally accessible for onclick handlers
+window.openEditModal = openEditModal;
+window.openDeleteModal = openDeleteModal; 
