@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Add YouTube Videos</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="admin-wrapper">
+        <aside class="sidebar">
+            <div class="sidebar-title">Admin Panel</div>
+            <!-- Future sidebar items -->
+        </aside>
+        <main class="main-content">
+            <header class="main-header">
+                <h1>YouTube Video Admin</h1>
+            </header>
+            <div id="notification" class="notification"></div>
+            
+            <!-- Manual Search Section -->
+            <div class="section-header">
+                <h2>Manual Search</h2>
+            </div>
+            <div class="search-section">
+                <input type="text" id="keyword" placeholder="Enter keyword...">
+                <button id="searchBtn">Search</button>
+            </div>
+            <div id="results" class="results-section"></div>
+            
+            <!-- Bulk Upload Section -->
+            <div class="section-header">
+                <h2>Bulk Upload</h2>
+            </div>
+            <div class="bulk-section">
+                <div class="bulk-keywords">
+                    <label for="bulkKeywords">Enter keywords (one per line):</label>
+                    <textarea id="bulkKeywords" placeholder="cat&#10;cat video&#10;cat entertainment video&#10;funny cats&#10;cute cats"></textarea>
+                </div>
+                <div class="bulk-options">
+                    <div class="video-count-section">
+                        <label for="videoCount">Videos to add per keyword:</label>
+                        <select id="videoCount">
+                            <option value="10">10 videos</option>
+                            <option value="25">25 videos</option>
+                            <option value="50">50 videos</option>
+                            <option value="75">75 videos</option>
+                            <option value="100">100 videos</option>
+                        </select>
+                    </div>
+                    <button id="bulkUploadBtn" class="bulk-btn">Start Bulk Upload</button>
+                </div>
+                <div id="bulkProgress" class="bulk-progress"></div>
+            </div>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
